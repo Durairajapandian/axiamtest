@@ -1,0 +1,86 @@
+trigger:
+  branches:
+    include:
+      - dev
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  solution: '**/*.sln'
+  buildConfiguration: 'Release'
+  artifactName: 'drop'
+
+stages:
+
+- stage: Build
+  displayName: 'Build .NET Framework WebApp'
+  jobs:
+    - job: BuildJob
+      displayName: 'Build Job'
+      steps:
+        - task: NuGetToolInstaller@1
+
+        - task: NuGetCommand@2
+          inputs:
+            restoreSolution: '$(solution)'
+
+        - task: VSBuild@1
+          inputs:
+            solution: '$(solution)'
+            msbuildArgs: '/p:DeployOnBuild=true /p:WebPublishMethod=FileSystem /p:OutDir="$(Build.ArtifactStagingDirectory)\WebApp\\"'
+            platform: 'Any CPU'
+            configuration: '$(buildConfiguration)'
+
+        - task: PublishBuildArtifacts@1
+          inputs:
+            PathtoPublish: '$(Build.ArtifactStagingDirectory)\WebApp'
+            ArtifactName: '$(artifactName)'
+            publishLocation: 'Container'
+
+- stage: Deploy
+  displayName: 'Deploy to Azure VM IIS'
+  dependsOn: Build
+  jobs:
+    - deployment: DeployToVM
+      displayName: 'Deploy to IIS'
+      environment: 'YourIISVMEnvironment'
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              # Download artifact
+              - task: DownloadPipelineArtifact@2
+                inputs:
+                  artifactName: '$(artifactName)'
+                  targetPath: '$(System.DefaultWorkingDirectory)\WebApp'
+
+              # Backup existing IIS content
+              - powershell: |
+                  $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+                  $sourcePath = "C:\inetpub\wwwroot\MyWebApp"
+                  $backupPath = "C:\inetpub\wwwroot\Backups\MyWebApp_$timestamp"
+                  if (Test-Path $sourcePath) {
+                      New-Item -ItemType Directory -Force -Path $backupPath
+                      Copy-Item -Path "$sourcePath\*" -Destination $backupPath -Recurse
+                      Write-Host "Backup completed: $backupPath"
+                  } else {
+                      Write-Host "No existing app found to backup."
+                  }
+                displayName: 'Backup Existing Website'
+
+              # Deploy new files
+              - powershell: |
+                  $source = "$(System.DefaultWorkingDirectory)\WebApp\"
+                  $destination = "C:\inetpub\wwwroot\MyWebApp"
+                  if (-Not (Test-Path $destination)) {
+                      New-Item -ItemType Directory -Force -Path $destination
+                  }
+                  Remove-Item "$destination\*" -Recurse -Force -ErrorAction SilentlyContinue
+                  Copy-Item -Path "$source\*" -Destination $destination -Recurse -Force
+                displayName: 'Deploy New Build to IIS'
+
+              # Restart IIS
+              - powershell: |
+                  iisreset
+                displayName: 'Restart IIS'
