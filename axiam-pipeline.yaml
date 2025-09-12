@@ -44,7 +44,7 @@ stages:
   jobs:
     - deployment: DeployToVM
       displayName: 'Deploy to IIS'
-      environment: 'YourIISVMEnvironment'
+      environment: 'Lexitas-IIS-Dev'
       strategy:
         runOnce:
           deploy:
