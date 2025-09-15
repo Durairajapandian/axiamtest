@@ -3,7 +3,6 @@ trigger:
     include:
       - dev
 
-# Use self-hosted agent pool
 pool:
   name: 'Default'
 
@@ -27,19 +26,19 @@ stages:
           inputs:
             restoreSolution: '$(solution)'
 
-        # Build with MSBuild (auto-detect from VM)
+        # Direct MSBuild command
         - powershell: |
-            Write-Host "Locating MSBuild..."
-            $msbuildPath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe"
-            if (-Not (Test-Path $msbuildPath)) {
-                throw "MSBuild not found at $msbuildPath. Please install Visual Studio Build Tools on this VM."
-            }
             Write-Host "Starting MSBuild..."
-            & $msbuildPath "$(solution)" `
-              /p:Configuration=$(buildConfiguration) `
-              /p:DeployOnBuild=true `
-              /p:WebPublishMethod=FileSystem `
-              /p:OutDir="$(Build.ArtifactStagingDirectory)\WebApp\"
+            $msbuildPath = "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe"
+            if (Test-Path $msbuildPath) {
+                & $msbuildPath "$(solution)" `
+                  /p:Configuration=$(buildConfiguration) `
+                  /p:DeployOnBuild=true `
+                  /p:WebPublishMethod=FileSystem `
+                  /p:OutDir="$(Build.ArtifactStagingDirectory)\WebApp\\"
+            } else {
+                throw "MSBuild not found at $msbuildPath. Please install Build Tools on the VM."
+            }
           displayName: 'Build with MSBuild'
 
         - task: PublishBuildArtifacts@1
@@ -55,6 +54,8 @@ stages:
   jobs:
     - deployment: DeployToVM
       displayName: 'Deploy to IIS'
+      pool:
+        name: Default
       deploymentGroup: 'Lexitas-VM-IIS'
       strategy:
         runOnce:
