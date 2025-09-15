@@ -91,7 +91,7 @@ stages:
 
                 # Deploy new build
                 - powershell: |
-                    $source = "$(System.DefaultWorkingDirectory)\WebApp\"
+                    $source = "$(System.DefaultWorkingDirectory)\WebApp\_PublishedWebsites\SampleApp"
                     $destination = "C:\inetpub\wwwroot\MyWebApp"
                     if (-Not (Test-Path $destination)) {
                         New-Item -ItemType Directory -Force -Path $destination
@@ -102,5 +102,5 @@ stages:
 
                 # Restart only your App Pool
                 - powershell: |
-                    Restart-WebAppPool -Name "MyWebAppPool"
+                    Restart-WebAppPool -Name "DefaultAppPool"
                   displayName: 'Restart IIS App Pool'
