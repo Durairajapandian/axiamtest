@@ -26,21 +26,19 @@ stages:
           inputs:
             restoreSolution: '$(solution)'
 
-        # Auto-detect MSBuild from PATH only
+        # Use hardcoded MSBuild path (Option 1)
         - powershell: |
-            Write-Host "Locating MSBuild from PATH..."
-            $msbuildCommand = Get-Command msbuild.exe -ErrorAction SilentlyContinue
-            if (-not $msbuildCommand) {
-                throw "MSBuild not found in PATH. Please install Build Tools or add MSBuild to PATH."
+            $msbuildPath = "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe"
+            if (-Not (Test-Path $msbuildPath)) {
+                throw "MSBuild not found at $msbuildPath. Please install Build Tools on the VM."
             }
-            $msbuildPath = $msbuildCommand.Source
             Write-Host "Using MSBuild at: $msbuildPath"
             & $msbuildPath "$(solution)" `
               /p:Configuration=$(buildConfiguration) `
               /p:DeployOnBuild=true `
               /p:WebPublishMethod=FileSystem `
               /p:OutDir="$(Build.ArtifactStagingDirectory)\WebApp\\"
-          displayName: 'Build with MSBuild from PATH'
+          displayName: 'Build with MSBuild (Option 1)'
 
         - task: PublishBuildArtifacts@1
           inputs:
