@@ -7,12 +7,13 @@ pool:
   vmImage: 'windows-latest'
 
 variables:
-  solution: '**/*.sln'
+  solution: 'main/Project-file/*.sln' 
   buildConfiguration: 'Release'
   artifactName: 'drop'
 
 stages:
 
+# ------------------- Build Stage -------------------
 - stage: Build
   displayName: 'Build .NET Framework WebApp'
   jobs:
@@ -38,24 +39,25 @@ stages:
             ArtifactName: '$(artifactName)'
             publishLocation: 'Container'
 
+# ------------------- Deploy Stage -------------------
 - stage: Deploy
   displayName: 'Deploy to Azure VM IIS'
   dependsOn: Build
   jobs:
     - deployment: DeployToVM
       displayName: 'Deploy to IIS'
-      environment: 'Lexitas-IIS-Dev'
+      environment: 'Lexitas-IIS-Dev'   #
       strategy:
         runOnce:
           deploy:
             steps:
-              # Download artifact
+              # Download build artifacts
               - task: DownloadPipelineArtifact@2
                 inputs:
                   artifactName: '$(artifactName)'
                   targetPath: '$(System.DefaultWorkingDirectory)\WebApp'
 
-              # Backup existing IIS content
+              # Backup existing IIS website
               - powershell: |
                   $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
                   $sourcePath = "C:\inetpub\wwwroot\MyWebApp"
@@ -69,7 +71,7 @@ stages:
                   }
                 displayName: 'Backup Existing Website'
 
-              # Deploy new files
+              # Deploy new build
               - powershell: |
                   $source = "$(System.DefaultWorkingDirectory)\WebApp\"
                   $destination = "C:\inetpub\wwwroot\MyWebApp"
@@ -80,7 +82,7 @@ stages:
                   Copy-Item -Path "$source\*" -Destination $destination -Recurse -Force
                 displayName: 'Deploy New Build to IIS'
 
-              # Restart IIS
+              # Restart only your App Pool (safer than full IIS reset)
               - powershell: |
-                  iisreset
-                displayName: 'Restart IIS'
+                  Restart-WebAppPool -Name "MyWebAppPool"
+                displayName: 'Restart IIS App Pool'
