@@ -4,7 +4,7 @@ trigger:
       - dev
 
 pool:
-  name: 'Azure Pipelines'  # Use Microsoft-hosted agents automatically
+  vmImage: 'windows-latest'  # Use Microsoft-hosted agents automatically
 
 variables:
   solution: 'main/Project-file/*.sln'
