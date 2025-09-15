@@ -26,27 +26,21 @@ stages:
           inputs:
             restoreSolution: '$(solution)'
 
-        # Auto-detect MSBuild instead of hardcoding
+        # Auto-detect MSBuild from PATH only
         - powershell: |
-            Write-Host "Locating MSBuild..."
-            $msbuild = (Get-Command msbuild.exe -ErrorAction SilentlyContinue).Source
-            if (-not $msbuild) {
-                $vsPath = &"${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
-                  -latest -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe
-                if ($vsPath) {
-                    $msbuild = $vsPath | Select-Object -First 1
-                }
+            Write-Host "Locating MSBuild from PATH..."
+            $msbuildCommand = Get-Command msbuild.exe -ErrorAction SilentlyContinue
+            if (-not $msbuildCommand) {
+                throw "MSBuild not found in PATH. Please install Build Tools or add MSBuild to PATH."
             }
-            if (-not $msbuild) {
-                throw "MSBuild not found. Please install Visual Studio Build Tools or ensure msbuild.exe is in PATH."
-            }
-            Write-Host "Using MSBuild at: $msbuild"
-            & $msbuild "$(solution)" `
+            $msbuildPath = $msbuildCommand.Source
+            Write-Host "Using MSBuild at: $msbuildPath"
+            & $msbuildPath "$(solution)" `
               /p:Configuration=$(buildConfiguration) `
               /p:DeployOnBuild=true `
               /p:WebPublishMethod=FileSystem `
               /p:OutDir="$(Build.ArtifactStagingDirectory)\WebApp\\"
-          displayName: 'Build with auto-detected MSBuild'
+          displayName: 'Build with MSBuild from PATH'
 
         - task: PublishBuildArtifacts@1
           inputs:
