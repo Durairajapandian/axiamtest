@@ -7,7 +7,7 @@ pool:
   name: 'Default'
 
 variables:
-  solution: 'main/Project-file/*.sln'
+  solution: 'main/Project-file/*.sln' 
   buildConfiguration: 'Release'
   artifactName: 'drop'
 
@@ -26,19 +26,25 @@ stages:
           inputs:
             restoreSolution: '$(solution)'
 
-        # Use hardcoded MSBuild path (Option 1)
+        # Auto-detect MSBuild using vswhere.exe
         - powershell: |
-            $msbuildPath = "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe"
-            if (-Not (Test-Path $msbuildPath)) {
-                throw "MSBuild not found at $msbuildPath. Please install Build Tools on the VM."
+            $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+            if (-Not (Test-Path $vswhere)) { 
+                throw "vswhere.exe not found. Install Visual Studio or Build Tools first." 
             }
-            Write-Host "Using MSBuild at: $msbuildPath"
+
+            $msbuildPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find "**\MSBuild\**\Bin\MSBuild.exe"
+            if (-Not $msbuildPath) { 
+                throw "MSBuild not found via vswhere. Please install Build Tools." 
+            }
+
+            Write-Host "MSBuild located at: $msbuildPath"
             & $msbuildPath "$(solution)" `
               /p:Configuration=$(buildConfiguration) `
               /p:DeployOnBuild=true `
               /p:WebPublishMethod=FileSystem `
-              /p:OutDir="$(Build.ArtifactStagingDirectory)\WebApp\\"
-          displayName: 'Build with MSBuild (Option 1)'
+              /p:OutDir="$(Build.ArtifactStagingDirectory)\WebApp\"
+          displayName: 'Build with auto-detected MSBuild'
 
         - task: PublishBuildArtifacts@1
           inputs:
@@ -58,11 +64,13 @@ stages:
         runOnce:
           deploy:
             steps:
+              # Download build artifacts
               - task: DownloadPipelineArtifact@2
                 inputs:
                   artifactName: '$(artifactName)'
                   targetPath: '$(System.DefaultWorkingDirectory)\WebApp'
 
+              # Backup existing IIS website
               - powershell: |
                   $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
                   $sourcePath = "C:\inetpub\wwwroot\MyWebApp"
@@ -76,6 +84,7 @@ stages:
                   }
                 displayName: 'Backup Existing Website'
 
+              # Deploy new build
               - powershell: |
                   $source = "$(System.DefaultWorkingDirectory)\WebApp\"
                   $destination = "C:\inetpub\wwwroot\MyWebApp"
@@ -86,6 +95,7 @@ stages:
                   Copy-Item -Path "$source\*" -Destination $destination -Recurse -Force
                 displayName: 'Deploy New Build to IIS'
 
+              # Restart only your App Pool
               - powershell: |
                   Restart-WebAppPool -Name "MyWebAppPool"
                 displayName: 'Restart IIS App Pool'
