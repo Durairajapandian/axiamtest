@@ -3,11 +3,12 @@ trigger:
     include:
       - dev
 
+# Use self-hosted agent pool
 pool:
-  vmImage: 'windows-latest'  # Use Microsoft-hosted agents automatically
+  name: 'Default'
 
 variables:
-  solution: 'main/Project-file/*.sln'
+  solution: 'main/Project-file/*.sln' 
   buildConfiguration: 'Release'
   artifactName: 'drop'
 
@@ -26,13 +27,20 @@ stages:
           inputs:
             restoreSolution: '$(solution)'
 
-        - task: VSBuild@1
-          inputs:
-            solution: '$(solution)'
-            msbuildArgs: '/p:DeployOnBuild=true /p:WebPublishMethod=FileSystem /p:OutDir="$(Build.ArtifactStagingDirectory)\WebApp\"'
-            platform: 'Any CPU'
-            configuration: '$(buildConfiguration)'
-          displayName: 'Build Solution with VSBuild'
+        # Build with MSBuild (auto-detect from VM)
+        - powershell: |
+            Write-Host "Locating MSBuild..."
+            $msbuildPath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe"
+            if (-Not (Test-Path $msbuildPath)) {
+                throw "MSBuild not found at $msbuildPath. Please install Visual Studio Build Tools on this VM."
+            }
+            Write-Host "Starting MSBuild..."
+            & $msbuildPath "$(solution)" `
+              /p:Configuration=$(buildConfiguration) `
+              /p:DeployOnBuild=true `
+              /p:WebPublishMethod=FileSystem `
+              /p:OutDir="$(Build.ArtifactStagingDirectory)\WebApp\"
+          displayName: 'Build with MSBuild'
 
         - task: PublishBuildArtifacts@1
           inputs:
@@ -47,16 +55,18 @@ stages:
   jobs:
     - deployment: DeployToVM
       displayName: 'Deploy to IIS'
-      environment: 'Lexitas-IIS-Dev'
+      deploymentGroup: 'Lexitas-VM-IIS'
       strategy:
         runOnce:
           deploy:
             steps:
+              # Download build artifacts
               - task: DownloadPipelineArtifact@2
                 inputs:
                   artifactName: '$(artifactName)'
                   targetPath: '$(System.DefaultWorkingDirectory)\WebApp'
 
+              # Backup existing IIS website
               - powershell: |
                   $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
                   $sourcePath = "C:\inetpub\wwwroot\MyWebApp"
@@ -70,6 +80,7 @@ stages:
                   }
                 displayName: 'Backup Existing Website'
 
+              # Deploy new build
               - powershell: |
                   $source = "$(System.DefaultWorkingDirectory)\WebApp\"
                   $destination = "C:\inetpub\wwwroot\MyWebApp"
@@ -80,6 +91,7 @@ stages:
                   Copy-Item -Path "$source\*" -Destination $destination -Recurse -Force
                 displayName: 'Deploy New Build to IIS'
 
+              # Restart only your App Pool (safer than full IIS reset)
               - powershell: |
                   Restart-WebAppPool -Name "MyWebAppPool"
                 displayName: 'Restart IIS App Pool'
