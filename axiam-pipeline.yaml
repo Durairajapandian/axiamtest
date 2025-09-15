@@ -4,7 +4,9 @@ trigger:
       - dev
 
 pool:
-  name: 'Lexitas-IIS'
+  name: 'Default'
+  demands:
+    - agent.name -equals Lexitas-IIS
 
 variables:
   solution: 'main/Project-file/*.sln' 
