@@ -7,7 +7,7 @@ pool:
   name: 'Default'
 
 variables:
-  solution: 'Project-file/*.sln'
+  solution: 'main/Project-file/*.sln'
   buildConfiguration: 'Release'
   artifactName: 'drop'
 
@@ -26,19 +26,29 @@ stages:
             inputs:
               restoreSolution: '$(solution)'
 
-          # Direct MSBuild command
+          # Enhanced MSBuild path detection
           - powershell: |
-              Write-Host "Starting MSBuild..."
-              $msbuildPath = "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe"
-              if (Test-Path $msbuildPath) {
-                  & $msbuildPath "$(solution)" `
-                    /p:Configuration=$(buildConfiguration) `
-                    /p:DeployOnBuild=true `
-                    /p:WebPublishMethod=FileSystem `
-                    /p:OutDir="$(Build.ArtifactStagingDirectory)\WebApp\\"
-              } else {
-                  throw "MSBuild not found at $msbuildPath. Please install Build Tools on the VM."
+              $msbuildPaths = @(
+                  "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
+                  "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\MSBuild\Current\Bin\MSBuild.exe",
+                  "C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\MSBuild\15.0\Bin\MSBuild.exe",
+                  "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe",
+                  "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
+                  "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
+              )
+
+              $msbuildPath = $msbuildPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+              if (-not $msbuildPath) {
+                  throw "MSBuild not found in the specified search paths. Please install Build Tools or Visual Studio."
               }
+
+              Write-Host "MSBuild located at: $msbuildPath"
+              & $msbuildPath "$(solution)" `
+                /p:Configuration=$(buildConfiguration) `
+                /p:DeployOnBuild=true `
+                /p:WebPublishMethod=FileSystem `
+                /p:OutDir="$(Build.ArtifactStagingDirectory)\WebApp\"
             displayName: 'Build with MSBuild'
 
           - task: PublishBuildArtifacts@1
