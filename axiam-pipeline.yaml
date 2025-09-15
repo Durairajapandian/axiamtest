@@ -7,93 +7,99 @@ pool:
   name: 'Default'
 
 variables:
-  solution: 'main/Project-file/*.sln' 
+  solution: 'main/Project-file/*.sln'
   buildConfiguration: 'Release'
   artifactName: 'drop'
 
 stages:
 
-# ------------------- Build Stage -------------------
-- stage: Build
-  displayName: 'Build .NET Framework WebApp'
-  jobs:
-    - job: BuildJob
-      displayName: 'Build Job'
-      steps:
-        - task: NuGetToolInstaller@1
+  # ------------------- Build Stage -------------------
+  - stage: Build
+    displayName: 'Build .NET Framework WebApp'
+    jobs:
+      - job: BuildJob
+        displayName: 'Build Job'
+        steps:
+          - task: NuGetToolInstaller@1
 
-        - task: NuGetCommand@2
-          inputs:
-            restoreSolution: '$(solution)'
+          - task: NuGetCommand@2
+            inputs:
+              restoreSolution: '$(solution)'
 
-        # MSBuild with fallback paths
-        - powershell: |
-            $msbuildPaths = @(
-                "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
-                "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\MSBuild\Current\Bin\MSBuild.exe",
-                "C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\MSBuild\15.0\Bin\MSBuild.exe"
-            )
+          # MSBuild with fallback paths for self-hosted agent
+          - powershell: |
+              $msbuildPaths = @(
+                  "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
+                  "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\MSBuild\Current\Bin\MSBuild.exe",
+                  "C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\MSBuild\15.0\Bin\MSBuild.exe",
+                  "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe",
+                  "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe"
+              )
 
-            $msbuildPath = $msbuildPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+              $msbuildPath = $msbuildPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
 
-            if (-Not $msbuildPath) {
-                throw "MSBuild not found. Please install Build Tools or Visual Studio on this VM."
-            }
+              if (-Not $msbuildPath) {
+                  throw "MSBuild not found. Please install Build Tools or Visual Studio on this VM and check path list."
+              }
 
-            Write-Host "MSBuild located at: $msbuildPath"
-            & $msbuildPath "$(solution)" `
-              /p:Configuration=$(buildConfiguration) `
-              /p:DeployOnBuild=true `
-              /p:WebPublishMethod=FileSystem `
-              /p:OutDir="$(Build.ArtifactStagingDirectory)\WebApp\"
-          displayName: 'Build with MSBuild (fallback paths)'
+              Write-Host "MSBuild located at: $msbuildPath"
+              & $msbuildPath "$(solution)" `
+                /p:Configuration=$(buildConfiguration) `
+                /p:DeployOnBuild=true `
+                /p:WebPublishMethod=FileSystem `
+                /p:OutDir="$(Build.ArtifactStagingDirectory)\WebApp\"
+            displayName: 'Build with MSBuild (fallback paths)'
 
-        - task: PublishBuildArtifacts@1
-          inputs:
-            PathtoPublish: '$(Build.ArtifactStagingDirectory)\WebApp'
-            ArtifactName: '$(artifactName)'
-            publishLocation: 'Container'
+          - task: PublishBuildArtifacts@1
+            inputs:
+              PathtoPublish: '$(Build.ArtifactStagingDirectory)\WebApp'
+              ArtifactName: '$(artifactName)'
+              publishLocation: 'Container'
 
-# ------------------- Deploy Stage -------------------
-- stage: Deploy
-  displayName: 'Deploy to Azure VM IIS'
-  dependsOn: Build
-  jobs:
-    - deployment: DeployToVM
-      displayName: 'Deploy to IIS'
-      environment: 'Lexitas-IIS-Dev'
-      strategy:
-        runOnce:
-          deploy:
-            steps:
-              - task: DownloadPipelineArtifact@2
-                inputs:
-                  artifactName: '$(artifactName)'
-                  targetPath: '$(System.DefaultWorkingDirectory)\WebApp'
+  # ------------------- Deploy Stage -------------------
+  - stage: Deploy
+    displayName: 'Deploy to Azure VM IIS'
+    dependsOn: Build
+    jobs:
+      - deployment: DeployToVM
+        displayName: 'Deploy to IIS'
+        environment: 'Lexitas-IIS-Dev'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                # Download build artifacts
+                - task: DownloadPipelineArtifact@2
+                  inputs:
+                    artifactName: '$(artifactName)'
+                    targetPath: '$(System.DefaultWorkingDirectory)\WebApp'
 
-              - powershell: |
-                  $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-                  $sourcePath = "C:\inetpub\wwwroot\MyWebApp"
-                  $backupPath = "C:\inetpub\wwwroot\Backups\MyWebApp_$timestamp"
-                  if (Test-Path $sourcePath) {
-                      New-Item -ItemType Directory -Force -Path $backupPath
-                      Copy-Item -Path "$sourcePath\*" -Destination $backupPath -Recurse
-                      Write-Host "Backup completed: $backupPath"
-                  } else {
-                      Write-Host "No existing app found to backup."
-                  }
-                displayName: 'Backup Existing Website'
+                # Backup existing IIS website
+                - powershell: |
+                    $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+                    $sourcePath = "C:\inetpub\wwwroot\MyWebApp"
+                    $backupPath = "C:\inetpub\wwwroot\Backups\MyWebApp_$timestamp"
+                    if (Test-Path $sourcePath) {
+                        New-Item -ItemType Directory -Force -Path $backupPath
+                        Copy-Item -Path "$sourcePath\*" -Destination $backupPath -Recurse
+                        Write-Host "Backup completed: $backupPath"
+                    } else {
+                        Write-Host "No existing app found to backup."
+                    }
+                  displayName: 'Backup Existing Website'
 
-              - powershell: |
-                  $source = "$(System.DefaultWorkingDirectory)\WebApp\"
-                  $destination = "C:\inetpub\wwwroot\MyWebApp"
-                  if (-Not (Test-Path $destination)) {
-                      New-Item -ItemType Directory -Force -Path $destination
-                  }
-                  Remove-Item "$destination\*" -Recurse -Force -ErrorAction SilentlyContinue
-                  Copy-Item -Path "$source\*" -Destination $destination -Recurse -Force
-                displayName: 'Deploy New Build to IIS'
+                # Deploy new build
+                - powershell: |
+                    $source = "$(System.DefaultWorkingDirectory)\WebApp\"
+                    $destination = "C:\inetpub\wwwroot\MyWebApp"
+                    if (-Not (Test-Path $destination)) {
+                        New-Item -ItemType Directory -Force -Path $destination
+                    }
+                    Remove-Item "$destination\*" -Recurse -Force -ErrorAction SilentlyContinue
+                    Copy-Item -Path "$source\*" -Destination $destination -Recurse -Force
+                  displayName: 'Deploy New Build to IIS'
 
-              - powershell: |
-                  Restart-WebAppPool -Name "MyWebAppPool"
-                displayName: 'Restart IIS App Pool'
+                # Restart only your App Pool
+                - powershell: |
+                    Restart-WebAppPool -Name "MyWebAppPool"
+                  displayName: 'Restart IIS App Pool'
