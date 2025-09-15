@@ -5,8 +5,7 @@ trigger:
 
 pool:
   name: 'Default'
-  demands:
-    - agent.name -equals Lexitas-IIS
+  # removed demands to avoid "visualstudio" capability issue
 
 variables:
   solution: 'main/Project-file/*.sln' 
@@ -28,12 +27,15 @@ stages:
           inputs:
             restoreSolution: '$(solution)'
 
-        - task: VSBuild@1
-          inputs:
-            solution: '$(solution)'
-            msbuildArgs: '/p:DeployOnBuild=true /p:WebPublishMethod=FileSystem /p:OutDir="$(Build.ArtifactStagingDirectory)\WebApp\\"'
-            platform: 'Any CPU'
-            configuration: '$(buildConfiguration)'
+        # Direct MSBuild command instead of VSBuild@1
+        - powershell: |
+            Write-Host "Starting MSBuild..."
+            & "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe" "$(solution)" `
+              /p:Configuration=$(buildConfiguration) `
+              /p:DeployOnBuild=true `
+              /p:WebPublishMethod=FileSystem `
+              /p:OutDir="$(Build.ArtifactStagingDirectory)\WebApp\\"
+          displayName: 'Build with MSBuild'
 
         - task: PublishBuildArtifacts@1
           inputs:
@@ -48,7 +50,7 @@ stages:
   jobs:
     - deployment: DeployToVM
       displayName: 'Deploy to IIS'
-      environment: 'Lexitas-IIS-Dev'   #
+      environment: 'Lexitas-IIS-Dev'
       strategy:
         runOnce:
           deploy:
