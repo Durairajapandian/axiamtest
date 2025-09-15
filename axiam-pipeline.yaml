@@ -7,7 +7,7 @@ pool:
   name: 'Default'
 
 variables:
-  solution: 'main/Project-file/*.sln' 
+  solution: 'Project-file/*.sln'
   buildConfiguration: 'Release'
   artifactName: 'drop'
 
@@ -54,8 +54,7 @@ stages:
     jobs:
       - deployment: DeployToVM
         displayName: 'Deploy to IIS'
-        pool:
-          name: 'Lexitas-VM-IIS'  # agent pool tied to your deployment group
+        environment: 'Lexitas-IIS-Dev'  # Azure DevOps Environment name
         strategy:
           runOnce:
             deploy:
@@ -91,7 +90,7 @@ stages:
                     Copy-Item -Path "$source\*" -Destination $destination -Recurse -Force
                   displayName: 'Deploy New Build to IIS'
 
-                # Restart only your App Pool (safer than full IIS reset)
+                # Restart only your App Pool
                 - powershell: |
                     Restart-WebAppPool -Name "MyWebAppPool"
                   displayName: 'Restart IIS App Pool'
